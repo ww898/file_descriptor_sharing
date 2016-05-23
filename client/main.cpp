@@ -7,6 +7,7 @@
 #include <sys/un.h>
 #include <iomanip>
 #include "unique_hld_definitions_linux.hpp"
+#include "scope_exit.hpp"
 #include "config.hpp"
 
 int main()
@@ -14,12 +15,15 @@ int main()
     using namespace jetbrains;
 
     std::cout << "Client" << std::endl;
-    common::unique_hld_close const _File_fd(open(P_tmpdir, O_TMPFILE | O_RDWR));
+
+    char _Temp_name[] = P_tmpdir "/file_descriptor_sharing_XXXXXX";
+    common::unique_hld_close const _File_fd(mkstemp(_Temp_name));
     if (!_File_fd)
     {
         perror("Failed to open temp file");
         return 1;
     }
+    common::scope_exit const _On_exit([&_Temp_name] () { unlink(_Temp_name); });
 
     common::unique_hld_close const _Socket_fd(socket(AF_UNIX, SOCK_STREAM, 0));
     if (!_Socket_fd)
