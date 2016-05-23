@@ -3,8 +3,27 @@
 #include <sys/un.h>
 #include <unistd.h>
 #include <cstring>
+#include <csignal>
+#include <iomanip>
 #include "unique_hld_definitions_linux.hpp"
 #include "config.hpp"
+
+namespace jetbrains {
+
+namespace {
+
+bool volatile _Oursig_int = false;
+
+void sigint_handler(int _Sig_num)
+{
+    if (_Sig_num == SIGINT)
+        _Oursig_int = true;
+}
+
+}
+
+}
+
 
 int main()
 {
@@ -38,7 +57,16 @@ int main()
 
     std::cout << "Press Ctrl+C to stop..." << std::endl;
 
-    while (true)
+    struct sigaction _Sig;
+    memset(&_Sig, 0, sizeof(_Sig));
+    _Sig.sa_handler = &sigint_handler;
+    if (sigaction(SIGINT, &_Sig, nullptr) < 0)
+    {
+        perror("Failed to set SIGINT handler");
+        return 1;
+    }
+
+    while (!_Oursig_int)
     {
         timeval _Tv;
         _Tv.tv_sec = 1;
@@ -48,10 +76,13 @@ int main()
         FD_ZERO(&_Rfds);
         FD_SET(_Socket_fd.get(), &_Rfds);
         if (select(_Socket_fd.get() + 1, &_Rfds, nullptr, nullptr, &_Tv) < 0)
-        {
-            perror("Failed to select socket");
-            return 1;
-        }
+            if (errno == EINTR)
+                continue;
+            else
+            {
+                perror("Failed to select socket");
+                return 1;
+            }
 
         if (FD_ISSET(_Socket_fd.get(), &_Rfds))
         {
@@ -65,11 +96,11 @@ int main()
             common::unique_hld_close _File_fd;
 
             {
-                unsigned char _Iovd[1024];
+                pid_t _Client_pid;
                 iovec _Iov;
                 memset(&_Iov, 0, sizeof(_Iov));
-                _Iov.iov_base = _Iovd;
-                _Iov.iov_len = sizeof(_Iovd);
+                _Iov.iov_base = &_Client_pid;
+                _Iov.iov_len = sizeof(_Client_pid);
 
                 unsigned char _Acm[1024];
                 msghdr _Msg;
@@ -79,15 +110,26 @@ int main()
                 _Msg.msg_control = _Acm;
                 _Msg.msg_controllen = sizeof(_Acm);
 
-                if (recvmsg(_Accept_fd.get(), &_Msg, 0) < 0)
+                auto const _Size = recvmsg(_Accept_fd.get(), &_Msg, 0);
+                if (_Size < 0)
                 {
                     perror("Failed to receive from socket");
                     return 1;
                 }
+                else if (_Size != sizeof(pid_t))
+                {
+                    perror("Invalid message data");
+                    return 1;
+                }
+
+                std::cout << "Client pid=" << _Client_pid << std::endl;
 
                 for (auto _Cm = CMSG_FIRSTHDR(&_Msg); _Cm; _Cm = CMSG_NXTHDR(&_Msg, _Cm))
                     if (_Cm->cmsg_type == SCM_RIGHTS)
+                    {
                         _File_fd.reset(*reinterpret_cast<int *>(CMSG_DATA(&_Acm)));
+                        break;
+                    }
 
                 if (!_File_fd)
                 {
@@ -97,16 +139,16 @@ int main()
             }
 
             {
-                static unsigned char const _Ourdata[] = { 0xAA, 0xBB, 0XCC };
+                static unsigned char const _Ourdata[] = {0xAA, 0xBB, 0XCC};
                 write(_File_fd.get(), _Ourdata, sizeof(_Ourdata));
             }
 
             {
-                static unsigned char const _Ourdata = 0xAA;
+                auto const _Pid = getpid();
                 iovec _Iov;
                 memset(&_Iov, 0, sizeof(_Iov));
-                _Iov.iov_base = const_cast<unsigned char *>(&_Ourdata);
-                _Iov.iov_len = sizeof(_Ourdata);
+                _Iov.iov_base = const_cast<pid_t *>(&_Pid);
+                _Iov.iov_len = sizeof(_Pid);
 
                 msghdr _Msg;
                 memset(&_Msg, 0, sizeof(_Msg));

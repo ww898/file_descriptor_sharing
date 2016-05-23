@@ -46,7 +46,7 @@ int main()
         union
         {
             cmsghdr _Mycm;
-            unsigned char _Mycontrol[CMSG_SPACE(sizeof(int))];
+            unsigned char _Myblob[CMSG_SPACE(sizeof(int))];
         } _Acm;
 #pragma pack(pop)
         memset(&_Acm, 0, sizeof(_Acm));
@@ -55,18 +55,18 @@ int main()
         _Acm._Mycm.cmsg_type = SCM_RIGHTS;
         *reinterpret_cast<int *>(CMSG_DATA(&_Acm)) = _File_fd.get();
 
-        static unsigned char const _Ourdata = 0x55;
+        auto const _Pid = getpid();
         iovec _Iov;
         memset(&_Iov, 0, sizeof(_Iov));
-        _Iov.iov_base = const_cast<unsigned char *>(&_Ourdata);
-        _Iov.iov_len = sizeof(_Ourdata);
+        _Iov.iov_base = const_cast<pid_t *>(&_Pid);
+        _Iov.iov_len = sizeof(_Pid);
 
         msghdr _Msg;
         memset(&_Msg, 0, sizeof(_Msg));
         _Msg.msg_iov = &_Iov;
         _Msg.msg_iovlen = 1;
-        _Msg.msg_control = _Acm._Mycontrol;
-        _Msg.msg_controllen = sizeof(_Acm._Mycontrol);
+        _Msg.msg_control = _Acm._Myblob;
+        _Msg.msg_controllen = sizeof(_Acm._Myblob);
 
         if (sendmsg(_Socket_fd.get(), &_Msg, 0) < 0)
         {
@@ -76,10 +76,10 @@ int main()
     }
 
     {
-        unsigned char _Buf[1024];
+        pid_t _Server_pid;
         iovec _Iov;
-        _Iov.iov_base = _Buf;
-        _Iov.iov_len = sizeof(_Buf);
+        _Iov.iov_base = &_Server_pid;
+        _Iov.iov_len = sizeof(_Server_pid);
 
         msghdr _Msg;
         memset(&_Msg, 0, sizeof(_Msg));
@@ -92,6 +92,8 @@ int main()
             perror("Failed to sent socket");
             return 1;
         }
+
+        std::cout << "Server pid=" << _Server_pid << std::endl;
     }
 
     if (lseek(_File_fd.get(), 0, SEEK_SET) < 0)
@@ -110,7 +112,11 @@ int main()
 
     std::cout << std::hex << std::setw(2) << std::setfill('0');
     for (int _N = 0; _N < _Size; ++_N)
-        std::cout << " 0x" << static_cast<unsigned>(_Buf[_N]);
+    {
+        if (_N != 0)
+            std::cout << ", ";
+        std::cout << "0x" << static_cast<unsigned>(_Buf[_N]);
+    }
     std::cout << std::endl;
     return 0;
 }
