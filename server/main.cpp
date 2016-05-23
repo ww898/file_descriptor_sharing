@@ -118,7 +118,7 @@ int main()
                 }
                 else if (_Size != sizeof(pid_t))
                 {
-                    perror("Invalid message data");
+                    perror("Invalid receive message data size");
                     return 1;
                 }
 
@@ -140,7 +140,17 @@ int main()
 
             {
                 static unsigned char const _Ourdata[] = {0xAA, 0xBB, 0XCC};
-                write(_File_fd.get(), _Ourdata, sizeof(_Ourdata));
+                auto const _Size = write(_File_fd.get(), _Ourdata, sizeof(_Ourdata));
+                if (_Size < 0)
+                {
+                    perror("Failed to write");
+                    return 1;
+                }
+                else if (_Size != sizeof(_Ourdata))
+                {
+                    perror("Too many bytes wa written");
+                    return 1;
+                }
             }
 
             {
@@ -155,9 +165,15 @@ int main()
                 _Msg.msg_iov = &_Iov;
                 _Msg.msg_iovlen = 1;
 
-                if (sendmsg(_Accept_fd.get(), &_Msg, 0) < 0)
+                auto const _Size = sendmsg(_Accept_fd.get(), &_Msg, 0);
+                if (_Size < 0)
                 {
                     perror("Failed to send to socket");
+                    return 1;
+                }
+                else if (_Size != sizeof(pid_t))
+                {
+                    perror("Invalid send message data size");
                     return 1;
                 }
             }

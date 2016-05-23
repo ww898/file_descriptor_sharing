@@ -72,9 +72,15 @@ int main()
         _Msg.msg_control = _Acm._Myblob;
         _Msg.msg_controllen = sizeof(_Acm._Myblob);
 
-        if (sendmsg(_Socket_fd.get(), &_Msg, 0) < 0)
+        auto const _Size = sendmsg(_Socket_fd.get(), &_Msg, 0);
+        if (_Size < 0)
         {
-            perror("Failed to sent socket");
+            perror("Failed to send to socket");
+            return 1;
+        }
+        else if (_Size != sizeof(pid_t))
+        {
+            perror("Invalid send message data size");
             return 1;
         }
     }
@@ -93,7 +99,12 @@ int main()
         auto const _Size = recvmsg(_Socket_fd.get(), &_Msg, 0);
         if (_Size < 0)
         {
-            perror("Failed to sent socket");
+            perror("Failed to receive from socket");
+            return 1;
+        }
+        else if (_Size != sizeof(pid_t))
+        {
+            perror("Invalid receive message data size");
             return 1;
         }
 
